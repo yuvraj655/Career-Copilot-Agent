@@ -1,0 +1,10 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2,<3
+langchain>=0.3,<0.4
+langchain-core>=0.3,<0.4
+langchain-google-genai>=2.0,<3.0
+langserve[server]>=0.3,<0.4
+python-dotenv>=1.0
+wikipedia>=1.4
+tzdata
