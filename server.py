@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables import RunnableLambda
 from langchain_core.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langserve import add_routes
@@ -107,7 +108,36 @@ llm = ChatGoogleGenerativeAI(
 )  # reads GOOGLE_API_KEY from the environment
 
 agent = create_tool_calling_agent(llm, TOOLS, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=TOOLS, verbose=True)
+agent_executor = AgentExecutor(
+    agent=agent,
+    tools=TOOLS,
+    verbose=True,
+    max_iterations=6,
+    handle_parsing_errors=True,
+)
+
+
+def _to_text(value) -> str:
+    """Gemini can return a list of content blocks; turn any shape into plain text."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts = []
+        for part in value:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict) and part.get("type") == "text":
+                parts.append(part.get("text", ""))
+        return "".join(parts)
+    return str(value)
+
+
+def _clean_output(result: dict) -> dict:
+    text = _to_text(result.get("output", "")).strip()
+    return {"output": text or "Sorry, I could not produce an answer. Please try rephrasing."}
+
+
+chain = agent_executor | RunnableLambda(_clean_output)
 
 
 class AgentInput(BaseModel):
@@ -138,7 +168,7 @@ async def health():
 
 add_routes(
     app,
-    agent_executor.with_types(input_type=AgentInput, output_type=AgentOutput),
+    chain.with_types(input_type=AgentInput, output_type=AgentOutput),
     path="/agent",
 )
 
