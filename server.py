@@ -8,8 +8,8 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
-from langchain.agents import AgentExecutor, create_tool_calling_agent
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableLambda
 from langchain_core.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -94,20 +94,44 @@ SYSTEM_PROMPT = (
     "step-by-step answers and keep them concise. If you are unsure, say so."
 )
 
-prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", SYSTEM_PROMPT),
-        ("human", "{input}"),
-        MessagesPlaceholder("agent_scratchpad"),
-    ]
+# A text-based ReAct prompt. It does not use Gemini's native function calling,
+# so it works with any Gemini model (including ones that need thought signatures).
+REACT_TEMPLATE = (
+    SYSTEM_PROMPT
+    + """
+
+You have access to these tools:
+
+{tools}
+
+Use this exact format:
+
+Question: the input question you must answer
+Thought: think about what to do next
+Action: the tool to use, which must be one of [{tool_names}]
+Action Input: the input to the tool
+Observation: the result of the tool
+... (the Thought/Action/Action Input/Observation steps can repeat)
+Thought: I now know the final answer
+Final Answer: the final answer to the original question
+
+If you do not need a tool, go straight to:
+Thought: I can answer directly
+Final Answer: your answer
+
+Begin!
+
+Question: {input}
+Thought:{agent_scratchpad}"""
 )
+
+prompt = PromptTemplate.from_template(REACT_TEMPLATE)
 
 llm = ChatGoogleGenerativeAI(
     model=os.getenv("MODEL_NAME", "gemini-2.5-flash"),
-    temperature=0.3,
 )  # reads GOOGLE_API_KEY from the environment
 
-agent = create_tool_calling_agent(llm, TOOLS, prompt)
+agent = create_react_agent(llm, TOOLS, prompt)
 agent_executor = AgentExecutor(
     agent=agent,
     tools=TOOLS,
